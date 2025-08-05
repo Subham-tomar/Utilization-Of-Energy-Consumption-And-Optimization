@@ -1,0 +1,117 @@
+package org.cloudbus.aco;
+
+import org.cloudbus.cloudsim.Cloudlet;
+import org.cloudbus.cloudsim.Vm;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+
+public class ACOAlgorithm {
+    private static double[][] pheromoneMatrix;
+    private static Random random = new Random();
+
+    public static void acoScheduleCloudlets(List<Cloudlet> cloudlets, List<Vm> vms) {
+        int numCloudlets = cloudlets.size();
+        int numVMs = vms.size();
+        
+        // Initialize pheromoneMatrix only once before accessing
+        if (pheromoneMatrix == null) {
+            pheromoneMatrix = new double[numCloudlets][numVMs];
+            for (int i = 0; i < numCloudlets; i++) {
+                for (int j = 0; j < numVMs; j++) {
+                    pheromoneMatrix[i][j] = Constants.INITIAL_PHEROMONE; // Initialize with the initial pheromone value
+                }
+            }
+        }
+
+        List<Integer> bestPath = null;
+        double bestPathFitness = Double.MAX_VALUE;
+
+        // Loop through the iterations
+        for (int iteration = 0; iteration < Constants.NUM_ITERATIONS; iteration++) {
+            List<List<Integer>> antPaths = new ArrayList<>();
+
+            // Simulate each ant finding a path
+            for (int ant = 0; ant < Constants.NUM_ANTS; ant++) {
+                List<Integer> path = new ArrayList<>();
+                // Ensure each cloudlet gets assigned to a VM
+                for (Cloudlet cloudlet : cloudlets) {
+                    int vmIndex = selectVMForCloudlet(cloudlet, vms);
+                    path.add(vmIndex);
+                }
+                antPaths.add(path);
+            }
+
+            // Update pheromones based on paths found
+            updatePheromones(antPaths);
+
+            // Calculate the fitness of paths and track the best one
+            for (List<Integer> path : antPaths) {
+                double pathFitness = calculatePathFitness(path);
+                if (pathFitness < bestPathFitness) {
+                    bestPathFitness = pathFitness;
+                    bestPath = path; // Track the best path
+                }
+            }
+        }
+
+        // After the ACO process, assign cloudlets to VMs based on the best path
+        if (bestPath != null) {
+            for (int i = 0; i < cloudlets.size(); i++) {
+                int vmIndex = bestPath.get(i); // VM assignment from best path
+                if (vmIndex >= 0 && vmIndex < vms.size()) {
+                    cloudlets.get(i).setGuestId(vmIndex);
+                }
+            }
+        }
+    }
+
+    private static double calculatePathFitness(List<Integer> path) {
+        // For simplicity, assuming the fitness of the path is the sum of cloudlet-Virtual Machine assignments
+        double fitness = 0;
+        for (int vmIndex : path) {
+            fitness += vmIndex;  // Here we are simply summing VM indices for illustrative purposes
+        }
+        return fitness;
+    }
+
+    private static int selectVMForCloudlet(Cloudlet cloudlet, List<Vm> vms) {
+        double total = 0;
+        double[] probabilities = new double[vms.size()];
+
+        for (int i = 0; i < vms.size(); i++) {
+            probabilities[i] = Math.pow(pheromoneMatrix[cloudlet.getCloudletId()][i], Constants.ALPHA)
+                    * Math.pow(1.0 / (vms.get(i).getBw()), Constants.BETA);
+            total += probabilities[i];
+        }
+
+        // Select a VM based on probabilities
+        double randomValue = random.nextDouble() * total;
+        double cumulative = 0;
+        for (int i = 0; i < vms.size(); i++) {
+            cumulative += probabilities[i];
+            if (randomValue < cumulative) {
+                return i;
+            }
+        }
+
+        return 0; // Default to VM 0
+    }
+
+    private static void updatePheromones(List<List<Integer>> antPaths) {
+        // Evaporate old pheromones
+        for (int i = 0; i < pheromoneMatrix.length; i++) {
+            for (int j = 0; j < pheromoneMatrix[i].length; j++) {
+                pheromoneMatrix[i][j] *= (1 - Constants.EVAPORATION_RATE);
+            }
+        }
+
+        // Update pheromones based on the ant paths
+        for (List<Integer> path : antPaths) {
+            for (int i = 0; i < path.size(); i++) {
+                pheromoneMatrix[i][path.get(i)] += 1.0; // Increase pheromone based on path quality
+            }
+        }
+    }
+}
